@@ -1,14 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { Employee, EmployeeStatus, Role } from '../types';
+import { Employee, EmployeeStatus, Role, Lead, LeadStatus } from '../types';
 import { 
   mockListEmployees, 
   mockDeactivateEmployee, 
   mockActivateEmployee,
   mockCreateEmployee,
   mockUpdateEmployee,
-  mockDeleteEmployee
+  mockDeleteEmployee,
+  mockListLeads
 } from '../mock/api';
-import { UserX, UserCheck, AlertTriangle, Plus, Edit, Trash2, X } from 'lucide-react';
+import { UserX, UserCheck, AlertTriangle, Plus, Edit, Trash2, X, Eye } from 'lucide-react';
 
 export const EmployeeManager: React.FC = () => {
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -17,9 +18,11 @@ export const EmployeeManager: React.FC = () => {
   // Modal States
   const [deactivateModal, setDeactivateModal] = useState<{ show: boolean, empId: string | null, empName: string }>({ show: false, empId: null, empName: '' });
   const [showEditModal, setShowEditModal] = useState(false);
-  const [showDeleteModal, setShowDeleteModal] = useState(false); // NEW: Delete Modal
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [viewLeadsModal, setViewLeadsModal] = useState<{ show: boolean, empName: string, leads: Lead[] }>({ show: false, empName: '', leads: [] });
+  
   const [editingEmployee, setEditingEmployee] = useState<Partial<Employee>>({});
-  const [deleteTarget, setDeleteTarget] = useState<Employee | null>(null); // NEW: Delete Target
+  const [deleteTarget, setDeleteTarget] = useState<Employee | null>(null);
 
   const fetchEmployees = async () => {
     setLoading(true);
@@ -63,7 +66,6 @@ export const EmployeeManager: React.FC = () => {
       await fetchEmployees();
       setShowDeleteModal(false);
       setDeleteTarget(null);
-      // alert('员工已删除'); // Optional toast, usually modal closing is enough feedback if list updates
     } catch(e) {
       alert('删除失败');
     } finally {
@@ -120,6 +122,28 @@ export const EmployeeManager: React.FC = () => {
     await mockActivateEmployee(id);
     await fetchEmployees();
     setLoading(false);
+  };
+
+  // --- View Leads Handler ---
+  const handleViewLeads = async (emp: Employee) => {
+    setLoading(true);
+    try {
+      const leads = await mockListLeads({ ownerId: emp.id });
+      // Filter out invalid/deal if needed, but usually we want to see what they have currently assigned
+      // The mockListEmployees count logic was: leads.filter(l => l.ownerId === emp.id && l.status !== LeadStatus.DEAL && l.status !== LeadStatus.INVALID)
+      // Let's show all leads associated with them for completeness, or match the count logic.
+      // Let's match the count logic for consistency in the "Assigned Leads" view, but maybe show others in a separate tab or just list them all with status.
+      // For now, let's just show all leads returned by the filter.
+      setViewLeadsModal({
+        show: true,
+        empName: emp.name,
+        leads: leads
+      });
+    } catch (e) {
+      alert('获取线索失败');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -187,7 +211,18 @@ export const EmployeeManager: React.FC = () => {
                   {emp.leftAt && <div className="text-xs text-red-500 mt-1">离职于: {new Date(emp.leftAt).toLocaleDateString()}</div>}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {emp.assignedLeadsCount}
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">{emp.assignedLeadsCount}</span>
+                    {emp.assignedLeadsCount !== undefined && emp.assignedLeadsCount > 0 && (
+                      <button 
+                        onClick={() => handleViewLeads(emp)}
+                        className="text-indigo-600 hover:text-indigo-900 p-1 rounded hover:bg-indigo-50"
+                        title="查看线索详情"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   {emp.customerCount}
@@ -360,7 +395,7 @@ export const EmployeeManager: React.FC = () => {
         </div>
       )}
 
-      {/* 3. Delete Confirmation Modal (NEW) */}
+      {/* 3. Delete Confirmation Modal */}
       {showDeleteModal && deleteTarget && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[70]">
           <div className="bg-white rounded-lg p-6 w-96 shadow-xl border-t-4 border-red-500">
@@ -384,6 +419,75 @@ export const EmployeeManager: React.FC = () => {
                 className="px-4 py-2 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 shadow-sm disabled:opacity-50"
               >
                 {loading ? '删除中...' : '确认删除'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 4. View Leads Modal (NEW) */}
+      {viewLeadsModal.show && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
+          <div className="bg-white rounded-lg p-6 w-[800px] max-h-[80vh] flex flex-col shadow-2xl">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-bold text-gray-800">
+                {viewLeadsModal.empName} 的线索列表
+              </h3>
+              <button 
+                onClick={() => setViewLeadsModal({ show: false, empName: '', leads: [] })}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-auto border border-gray-200 rounded-md">
+              {viewLeadsModal.leads.length === 0 ? (
+                <div className="p-8 text-center text-gray-500">
+                  暂无分配线索
+                </div>
+              ) : (
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50 sticky top-0">
+                    <tr>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">姓名</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">电话</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">来源</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">状态</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">更新时间</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {viewLeadsModal.leads.map(lead => (
+                      <tr key={lead.id}>
+                        <td className="px-4 py-2 text-sm text-gray-900">{lead.name}</td>
+                        <td className="px-4 py-2 text-sm text-gray-500">{lead.phone}</td>
+                        <td className="px-4 py-2 text-sm text-gray-500">{lead.source}</td>
+                        <td className="px-4 py-2 text-sm">
+                          <span className={`px-2 py-0.5 rounded text-xs ${
+                            lead.status === LeadStatus.DEAL ? 'bg-green-100 text-green-800' :
+                            lead.status === LeadStatus.INVALID ? 'bg-gray-100 text-gray-800' :
+                            'bg-blue-100 text-blue-800'
+                          }`}>
+                            {lead.status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2 text-sm text-gray-500">
+                          {new Date(lead.updatedAt).toLocaleDateString()}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            
+            <div className="mt-4 flex justify-end">
+              <button 
+                onClick={() => setViewLeadsModal({ show: false, empName: '', leads: [] })}
+                className="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
+              >
+                关闭
               </button>
             </div>
           </div>
